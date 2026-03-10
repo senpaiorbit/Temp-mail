@@ -1,29 +1,52 @@
-# TempMail API
+# TempMail API — Vercel Serverless
 
-A REST API that provides temporary email functionality by scraping [emailnator.com](https://www.emailnator.com) using Playwright (headless Chromium). Works with the dynamic React-based site by interacting with page elements rather than static HTML.
+Scrapes [emailnator.com](https://www.emailnator.com) (a dynamic React app) using **Puppeteer** + **@sparticuz/chromium** — a compressed Chromium binary built specifically for serverless environments (Vercel, AWS Lambda, etc).
 
-## Endpoints
+## Why @sparticuz/chromium?
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | API info & endpoint list |
-| GET | `/health` | Health check |
-| GET | `/generate` | Generate a new temp email |
-| GET | `/inbox?email=<email>` | List inbox messages |
-| GET | `/message?email=<email>&id=<id>` | Read a specific message |
+Vercel serverless functions have a **50MB compressed size limit** and **no system dependencies**. Standard Playwright/Chromium binaries are 300MB+. `@sparticuz/chromium` solves this by:
+- Shipping a Brotli-compressed Chromium (~40MB compressed)
+- Auto-decompressing to `/tmp` at runtime
+- Working within Vercel's execution constraints
 
-### `/generate` Query Parameters
+---
 
-| Param | Default | Description |
-|-------|---------|-------------|
-| `domain` | `true` | Include custom domain emails |
-| `plusGmail` | `true` | Include +Gmail variant |
-| `dotGmail` | `true` | Include .Gmail variant |
-| `googleMail` | `true` | Include GoogleMail variant |
+## Project Structure
+
+```
+tempmail-api/
+├── api/
+│   ├── _browser.js     # Shared Puppeteer/Chromium setup
+│   ├── _scraper.js     # All scraping logic (generate, inbox, message)
+│   ├── index.js        # GET /api  → API info
+│   ├── generate.js     # GET /api/generate
+│   ├── inbox.js        # GET /api/inbox
+│   └── message.js      # GET /api/message
+├── vercel.json         # Function memory/timeout config
+├── package.json
+└── .gitignore
+```
+
+---
+
+## API Endpoints
+
+### `GET /api/generate`
+
+Generate a new temporary email address.
+
+**Query params** (all optional, default `true`):
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `domain` | boolean | true | Include custom domain emails |
+| `plusGmail` | boolean | true | Include +Gmail variant |
+| `dotGmail` | boolean | true | Include .Gmail variant |
+| `googleMail` | boolean | true | Include GoogleMail variant |
 
 **Example:**
 ```
-GET /generate?domain=true&plusGmail=false
+GET /api/generate?plusGmail=false
 ```
 ```json
 {
@@ -32,100 +55,90 @@ GET /generate?domain=true&plusGmail=false
 }
 ```
 
-### `/inbox`
+---
 
+### `GET /api/inbox?email=<email>`
+
+List all inbox messages for an email address.
+
+**Example:**
 ```
-GET /inbox?email=va.ne.ss.ap@gmail.com
+GET /api/inbox?email=va.ne.ss.ap@gmail.com
 ```
 ```json
 {
   "email": "va.ne.ss.ap@gmail.com",
   "messages": [
-    { "from": "noreply@example.com", "subject": "Welcome!", "time": "2 min ago", "id": "0" }
+    { "id": "0", "from": "noreply@github.com", "subject": "Verify your email", "time": "2m ago" }
   ],
   "count": 1
 }
 ```
 
-### `/message`
+---
 
+### `GET /api/message?email=<email>&id=<id>`
+
+Read a specific message. Use the `id` from `/api/inbox`.
+
+**Example:**
 ```
-GET /message?email=va.ne.ss.ap@gmail.com&id=0
+GET /api/message?email=va.ne.ss.ap@gmail.com&id=0
 ```
 ```json
 {
   "email": "va.ne.ss.ap@gmail.com",
-  "id": "0",
-  "text": "Welcome to Example! Click here to verify...",
+  "messageId": "0",
+  "text": "Please verify your email address by clicking the link below...",
   "html": "<div>...</div>"
 }
 ```
 
 ---
 
-## Deploy to Fly.io
+## Deploy to Vercel
 
-### Prerequisites
+### Option A — Deploy via GitHub (Recommended)
 
-- [Fly.io account](https://fly.io) (free tier works)
-- [flyctl CLI](https://fly.io/docs/hands-on/install-flyctl/) installed
-
-### Steps
-
-1. **Install flyctl**
+1. **Push this project to a GitHub repo**
    ```bash
-   # macOS
-   brew install flyctl
+   git init
+   git add .
+   git commit -m "initial commit"
+   git remote add origin https://github.com/YOUR_USER/tempmail-api.git
+   git push -u origin main
+   ```
 
-   # Linux
-   curl -L https://fly.io/install.sh | sh
+2. **Import on Vercel**
+   - Go to [vercel.com/new](https://vercel.com/new)
+   - Click **"Import Git Repository"**
+   - Select your repo
+   - Framework: **Other**
+   - Click **Deploy**
 
-   # Windows
-   pwsh -Command "iwr https://fly.io/install.ps1 -useb | iex"
+3. **Done!** Your API is live at `https://your-project.vercel.app`
+
+---
+
+### Option B — Deploy via CLI
+
+1. **Install Vercel CLI**
+   ```bash
+   npm install -g vercel
    ```
 
 2. **Login**
    ```bash
-   fly auth login
+   vercel login
    ```
 
-3. **Edit `fly.toml`** — change the app name to something unique:
-   ```toml
-   app = "your-unique-app-name"
-   ```
-
-4. **Create the app on Fly.io**
+3. **Install dependencies & deploy**
    ```bash
-   fly apps create your-unique-app-name
+   npm install
+   vercel --prod
    ```
 
-5. **Deploy**
-   ```bash
-   fly deploy
-   ```
-   > First deploy may take 5–10 minutes as it installs Playwright + Chromium.
-
-6. **Open your API**
-   ```bash
-   fly open
-   ```
-   Your API will be live at: `https://your-unique-app-name.fly.dev`
-
-### Useful Commands
-
-```bash
-# View logs
-fly logs
-
-# SSH into the machine
-fly ssh console
-
-# Scale memory if needed
-fly scale memory 1024
-
-# Check status
-fly status
-```
+4. Follow the prompts — link to an existing project or create new.
 
 ---
 
@@ -133,18 +146,43 @@ fly status
 
 ```bash
 npm install
-npx playwright install chromium
-npm start
+npx vercel dev
 ```
 
-API runs at `http://localhost:8080`
+> Local dev uses a full Chromium installation. On local, `@sparticuz/chromium` detects it's not in a Lambda environment and falls back to system Chrome if available.
+>
+> **Optional:** Install full Puppeteer locally for easier local dev:
+> ```bash
+> npm install --save-dev puppeteer
+> ```
+> Then update `_browser.js` to use `require('puppeteer')` when `process.env.VERCEL !== '1'`.
+
+---
+
+## Vercel Plan Requirements
+
+| Feature | Free (Hobby) | Pro |
+|---------|-------------|-----|
+| Function memory | Up to 1024 MB ✅ | Up to 3009 MB |
+| Max duration | 10s ⚠️ (may timeout) | 60s ✅ |
+| Executions/mo | 100,000 | Unlimited |
+
+> ⚠️ **Important:** The Hobby plan limits function execution to **10 seconds**. Puppeteer + dynamic scraping typically takes **15–30 seconds**. You may need to **upgrade to the Pro plan** ($20/mo) for reliable operation, or optimize by reducing timeouts.
+
+---
+
+## Timeout Optimization Tips
+
+If you're on Hobby plan (10s limit), try these in `_scraper.js`:
+
+1. **Reduce navigation timeout:** Change `waitUntil: 'networkidle2'` → `'domcontentloaded'`
+2. **Reduce `waitForTimeout` delays** from 2500ms → 1000ms
+3. **Pre-warm** by hitting `/api/generate` on a schedule (e.g., UptimeRobot)
 
 ---
 
 ## Notes
 
-- **Dynamic scraping**: Uses Playwright headless Chromium to interact with emailnator.com's React-based UI by clicking buttons and reading DOM elements — not static HTML parsing.
-- **Memory**: Playwright requires at least 512MB RAM. The `fly.toml` sets 1GB.
-- **Cold starts**: With `auto_stop_machines = true`, first request after idle may take ~10–15s to spin up Chromium.
-- **Rate limiting**: emailnator.com may throttle excessive requests. Add delays between calls if needed.
-- **Ethics**: Use responsibly. Do not abuse the free service.
+- Scraping uses **real page element interactions** (clicks, form fills) — not static HTML parsing — because emailnator.com is a React SPA.
+- Request interception blocks images/fonts/CSS to speed up page loads.
+- The `@sparticuz/chromium` binary is decompressed to `/tmp` on first cold start — this adds ~5s to cold start time.
