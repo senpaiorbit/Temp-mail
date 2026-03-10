@@ -1,41 +1,10 @@
 {
   "version": 2,
   "functions": {
-    "api/generate.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/inbox.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/message.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/index.js": {
-      "memory": 128,
-      "maxDuration": 5
-    }
-  },
-  "routes": [
-    {
-      "src": "/",
-      "dest": "/api/index.js"
-    },
-    {
-      "src": "/api",
-      "dest": "/api/index.js"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
-      ]
-    }
-  ]
+    "api/generate.js": { "maxDuration": 30, "memory": 512 },
+    "api/inbox.js":    { "maxDuration": 30, "memory": 512 },
+    "api/message.js":  { "maxDuration": 30, "memory": 512 },
+    "api/index.js":    { "maxDuration": 10, "memory": 128 },
+    "api/health.js":   { "maxDuration": 10, "memory": 128 }
+  }
 }

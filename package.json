@@ -1,20 +1,18 @@
 {
   "name": "tempmail-api",
   "version": "1.0.0",
-  "description": "Temp email API via Puppeteer + sparticuz/chromium on Vercel",
-  "private": true,
+  "description": "Temp mail API via emailnator.com — Vercel serverless, axios + cheerio",
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod"
   },
   "dependencies": {
-    "@sparticuz/chromium": "^123.0.0",
-    "puppeteer-core": "^22.0.0"
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0",
+    "tough-cookie": "^4.1.3",
+    "axios-cookiejar-support": "^4.0.7"
   },
   "devDependencies": {
     "vercel": "^34.0.0"
-  },
-  "engines": {
-    "node": ">=18"
   }
 }
