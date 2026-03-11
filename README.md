@@ -1,83 +1,57 @@
-# TempMail API — Vercel Serverless (axios + cheerio)
+# TempMail API v3 — Vercel Serverless
 
-A lightweight REST API for temporary Gmail addresses via **emailnator.com**.  
-No headless browser — uses **axios** + **tough-cookie** to call emailnator's real backend API directly.
-
-✅ Works on **Vercel Free Plan**  
-✅ No Playwright / Puppeteer / Chromium  
-✅ Fast cold starts (~200ms vs 15s for browser-based)  
-✅ Only 4 small dependencies
+> **What was fixed:** The 405 error was caused by calling wrong route paths.  
+> emailnator's backend routes are `POST /api/generate-email` and `POST /api/inbox`.  
+> The previous version was calling `/api/generate` (a GET-only frontend route).
 
 ---
 
-## How It Works
+## Confirmed API Routes (emailnator.com backend)
 
-Emailnator is a React SPA but its **backend is a standard Laravel REST API** protected by Sanctum CSRF.
+| Step | Method | Path | Body |
+|------|--------|------|------|
+| 1 | GET | `/sanctum/csrf-cookie` | — |
+| 2 | POST | `/api/generate-email` | `{ "email": ["domain","plusGmail",...] }` |
+| 3 | POST | `/api/inbox` | `{ "email": "user@gmail.com" }` |
+| 4 | POST | `/api/inbox` | `{ "email": "user@gmail.com", "messageID": "abc" }` |
 
-The flow for every request:
-1. `GET /sanctum/csrf-cookie` → Laravel sets `XSRF-TOKEN` + `laravel_session` cookies
-2. Extract `XSRF-TOKEN` from the cookie jar
-3. `POST /api/generate-email` / `POST /api/inbox` with the token as `X-XSRF-TOKEN` header
-
-`tough-cookie` + `axios-cookiejar-support` handle cookie persistence across steps within a single serverless invocation.
-
----
-
-## Project Structure
-
-```
-├── api/
-│   ├── _client.js    ← Core: session init, CSRF, all emailnator API calls
-│   ├── index.js      ← GET /api              — docs
-│   ├── health.js     ← GET /api/health       — health check
-│   ├── generate.js   ← GET /api/generate     — generate temp email
-│   ├── inbox.js      ← GET /api/inbox        — list messages
-│   └── message.js    ← GET /api/message      — read message (cheerio parses HTML→text)
-├── vercel.json       ← 30s timeout, 512MB per function
-├── package.json
-└── .gitignore
-```
+Steps 3 and 4 use the **same endpoint** — the `messageID` field switches between list and fetch mode.
 
 ---
 
-## API Reference
+## Your API Endpoints
 
 ### `GET /api/generate`
-Generate a new temporary email address.
-
-| Param | Default | Description |
-|-------|---------|-------------|
-| `domain` | `true` | Custom domain variant |
-| `plusGmail` | `true` | +Gmail trick (user+tag@gmail.com) |
-| `dotGmail` | `true` | Dot trick (u.s.e.r@gmail.com) |
-| `googleMail` | `true` | @googlemail.com variant |
 
 ```bash
 curl "https://your-app.vercel.app/api/generate"
+# With options:
+curl "https://your-app.vercel.app/api/generate?dotGmail=false&domain=false"
 ```
+
 ```json
 {
   "email": "va.ne.ss.ap@gmail.com",
   "raw": ["va.ne.ss.ap@gmail.com"],
-  "options": ["domain", "plusGmail", "dotGmail", "googleMail"]
+  "options": ["plusGmail", "googleMail"]
 }
 ```
 
 ---
 
 ### `GET /api/inbox?email=<email>`
-List inbox messages for an email.
 
 ```bash
 curl "https://your-app.vercel.app/api/inbox?email=va.ne.ss.ap@gmail.com"
 ```
+
 ```json
 {
   "email": "va.ne.ss.ap@gmail.com",
   "count": 1,
   "messages": [
     {
-      "messageID": "ABC123xyz",
+      "messageID": "MTkwZmQ4MjU3MjU4ODhkMQ==",
       "from": "noreply@example.com",
       "subject": "Verify your account",
       "time": "Just Now"
@@ -86,23 +60,27 @@ curl "https://your-app.vercel.app/api/inbox?email=va.ne.ss.ap@gmail.com"
 }
 ```
 
+> Note: emailnator always includes a `{ "messageID": "ad" }` entry — this is filtered out automatically.
+
 ---
 
 ### `GET /api/message?email=<email>&messageID=<id>`
-Read the full content of a message. Use `messageID` from `/api/inbox`.
+
+Use the `messageID` value from `/api/inbox`.
 
 ```bash
-curl "https://your-app.vercel.app/api/message?email=va.ne.ss.ap@gmail.com&messageID=ABC123xyz"
+curl "https://your-app.vercel.app/api/message?email=va.ne.ss.ap@gmail.com&messageID=MTkwZmQ4MjU3MjU4ODhkMQ=="
 ```
+
 ```json
 {
   "email": "va.ne.ss.ap@gmail.com",
-  "messageID": "ABC123xyz",
+  "messageID": "MTkwZmQ4MjU3MjU4ODhkMQ==",
   "from": "noreply@example.com",
   "subject": "Verify your account",
   "time": "Just Now",
-  "html": "<div>Click here to verify: https://example.com/verify/token</div>",
-  "text": "Click here to verify: https://example.com/verify/token"
+  "html": "<div>Click to verify: https://example.com/verify/token123</div>",
+  "text": "Click to verify: https://example.com/verify/token123"
 }
 ```
 
@@ -115,64 +93,38 @@ curl "https://your-app.vercel.app/api/message?email=va.ne.ss.ap@gmail.com&messag
 
 ---
 
-## Deploy to Vercel Free Plan
-
-### Option A — CLI
+## Deploy
 
 ```bash
-# 1. Install Vercel CLI
-npm install -g vercel
-
-# 2. Install dependencies
 npm install
-
-# 3. Login
 vercel login
-
-# 4. Deploy
 vercel --prod
 ```
 
-Vercel will ask a few setup questions on first deploy. Accept defaults.  
-Your API will be live at: `https://<your-project>.vercel.app`
-
----
-
-### Option B — GitHub Import
-
-1. Push to a GitHub repo
-2. Go to [vercel.com/new](https://vercel.com/new)
-3. Import the repo — click **Deploy**. Done.
-
----
-
-## Local Development
+## Local Dev
 
 ```bash
 npm install
 vercel dev
-# API at http://localhost:3000
+# → http://localhost:3000
 ```
 
 ---
 
-## Vercel Free Plan Compatibility
+## How the CSRF session works
 
-| Limit | Free Plan | This API |
-|-------|-----------|----------|
-| Function timeout | 60s max | ✅ 30s set |
-| Memory | 1024MB max | ✅ 512MB set |
-| Executions/month | 100,000 | ✅ Fine for personal/dev use |
-| Bundle size | 50MB max | ✅ ~5MB total |
-| Cold start | ~200ms | ✅ No browser overhead |
+emailnator uses **Laravel Sanctum** to protect its API.  
+Every request requires a fresh session established by a two-step handshake:
 
----
+```
+1. GET /sanctum/csrf-cookie
+   → Sets cookies: XSRF-TOKEN (URL-encoded) + emailnator_session
 
-## Dependencies
+2. POST /api/... 
+   → Headers must include:
+       X-XSRF-TOKEN: <decoded XSRF-TOKEN value>
+       Cookie: XSRF-TOKEN=...; emailnator_session=...
+```
 
-| Package | Purpose |
-|---------|---------|
-| `axios` | HTTP requests to emailnator |
-| `tough-cookie` | Cookie jar (stores XSRF + session across requests) |
-| `axios-cookiejar-support` | Connects tough-cookie to axios |
-| `cheerio` | Parses message HTML to extract plain text |
+`tough-cookie` + `axios-cookiejar-support` handle cookie persistence across both steps.  
+Each serverless invocation creates a fresh cookie jar (no shared state between requests).
