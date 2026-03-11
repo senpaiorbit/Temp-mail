@@ -1,17 +1,21 @@
 /**
  * GET /api/inbox?email=<address>
  *
- * Lists all messages in the inbox of the given email address.
+ * Lists all messages in the inbox.
  *
- * Response:
+ * Internally calls: POST /api/inbox  { "email": "user@gmail.com" }
+ *
+ * emailnator response shape:
  *   {
- *     email: "user@gmail.com",
- *     count: 2,
- *     messages: [
- *       { messageID: "abc123", from: "noreply@x.com", subject: "Hello", time: "Just Now" },
+ *     "messageData": [
+ *       { "messageID": "ad" },          ← ad placeholder, always filter out
+ *       { "messageID": "abc123", "from": "...", "subject": "...", "time": "..." },
  *       ...
  *     ]
  *   }
+ *
+ * Our response:
+ *   { "email": "...", "count": 2, "messages": [{messageID, from, subject, time}] }
  */
 
 const { getInbox } = require("./_client");
@@ -30,39 +34,34 @@ module.exports = async (req, res) => {
   }
 
   try {
+    // → POST /api/inbox  { "email": "user@gmail.com" }
     const data = await getInbox(email);
 
-    /**
-     * emailnator returns:
-     * {
-     *   messageData: [
-     *     { messageID: "ad", from: "...", subject: "...", time: "..." },
-     *     { messageID: "abc123", from: "...", subject: "...", time: "..." }
-     *   ]
-     * }
-     *
-     * Note: The first entry is always { messageID: "ad" } — it's an ad placeholder.
-     * We filter it out.
-     */
+    // Filter out the "ad" placeholder entry that emailnator always includes
     const raw = Array.isArray(data.messageData) ? data.messageData : [];
-    const messages = raw.filter((m) => m.messageID && m.messageID !== "ad");
+    const messages = raw.filter(
+      (m) => m && m.messageID && m.messageID !== "ad"
+    );
 
     return res.status(200).json({
       email,
       count: messages.length,
       messages,
     });
-  } catch (err) {
-    console.error("[inbox] error:", err.message);
 
-    if (err.response) {
+  } catch (err) {
+    console.error("[inbox] error:", err.message, "| status:", err.status, "| data:", err.data);
+
+    if (err.status) {
       return res.status(502).json({
         error: "emailnator API error",
-        status: err.response.status,
-        detail: err.response.data,
+        status: err.status,
+        detail: err.data,
+        hint: err.status === 405
+          ? "Route mismatch — emailnator expects POST /api/inbox"
+          : undefined,
       });
     }
-
     return res.status(500).json({ error: err.message });
   }
 };

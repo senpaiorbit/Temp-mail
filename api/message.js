@@ -1,18 +1,20 @@
 /**
  * GET /api/message?email=<address>&messageID=<id>
  *
- * Fetches the full HTML content of a specific email message.
- * Use the messageID from /api/inbox response.
+ * Reads the full content of a specific message.
+ * Get the messageID from /api/inbox response.
  *
- * Response:
+ * Internally calls: POST /api/inbox  { "email": "...", "messageID": "..." }
+ *
+ * emailnator response contains the full email HTML in `data.mail`.
+ * We also extract plain text via cheerio.
+ *
+ * Our response:
  *   {
- *     email: "user@gmail.com",
- *     messageID: "abc123",
- *     from: "noreply@example.com",
- *     subject: "Verify your account",
- *     time: "Just Now",
- *     html: "<div>...</div>",
- *     text: "plain text version..."
+ *     email, messageID,
+ *     from, subject, time,
+ *     html,   ← raw HTML of email body
+ *     text    ← plain text stripped by cheerio
  *   }
  */
 
@@ -33,57 +35,67 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: "Missing required query param: email" });
   }
   if (!messageID) {
-    return res.status(400).json({ error: "Missing required query param: messageID (get this from /api/inbox)" });
+    return res.status(400).json({
+      error: "Missing required query param: messageID",
+      hint: "Get the messageID from GET /api/inbox?email=...",
+    });
   }
 
   try {
+    // → POST /api/inbox  { "email": "...", "messageID": "..." }
     const data = await getMessage(email, messageID);
 
     /**
-     * emailnator returns the full message object.
-     * The mail body HTML is in data.mail (a string of HTML).
-     * Other fields: from, subject, time, etc.
-     *
-     * Structure example:
+     * emailnator message response shape:
      * {
-     *   from: "Service <noreply@example.com>",
-     *   subject: "Verify your account",
-     *   time: "Just Now",
-     *   mail: "<html>...</html>"   ← full email HTML
+     *   "from":    "Sender Name <sender@example.com>",
+     *   "subject": "Your verification code",
+     *   "time":    "Just Now",
+     *   "mail":    "<html>...</html>"   ← full email HTML body
      * }
+     *
+     * Some fields may vary; defensively fall back to empty string.
      */
+    const html = data.mail || data.html || data.body || data.message || "";
+    const from    = data.from    || "";
+    const subject = data.subject || "";
+    const time    = data.time    || "";
 
-    // Extract plain text from HTML using cheerio
-    let plainText = "";
-    const html = data.mail || data.html || data.body || "";
-
+    // Use cheerio to extract clean plain text from the HTML
+    let text = "";
     if (html) {
       const $ = cheerio.load(html);
-      // Remove script/style tags before extracting text
-      $("script, style, head").remove();
-      plainText = $.root().text().replace(/\s+/g, " ").trim();
+      $("script, style, head, noscript, iframe").remove();
+      text = $.root()
+        .text()
+        .replace(/[ \t]+/g, " ")       // collapse horizontal whitespace
+        .replace(/\n{3,}/g, "\n\n")     // collapse excessive blank lines
+        .trim();
     }
 
     return res.status(200).json({
       email,
       messageID,
-      from:    data.from    || "",
-      subject: data.subject || "",
-      time:    data.time    || "",
+      from,
+      subject,
+      time,
       html,
-      text: plainText,
+      text,
     });
-  } catch (err) {
-    console.error("[message] error:", err.message);
 
-    if (err.response) {
+  } catch (err) {
+    console.error("[message] error:", err.message, "| status:", err.status, "| data:", err.data);
+
+    if (err.status) {
       return res.status(502).json({
         error: "emailnator API error",
-        status: err.response.status,
-        detail: err.response.data,
+        status: err.status,
+        detail: err.data,
+        hint: err.status === 405
+          ? "Route mismatch — emailnator expects POST /api/inbox with {email, messageID} body"
+          : undefined,
       });
     }
-
     return res.status(500).json({ error: err.message });
   }
 };
